@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PhotoFetch</title>
+    <link rel="stylesheet" href="/static/leaflet.css">
+    <script src="/static/leaflet.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #1a1a2e; color: #eee; min-height: 100vh; }
+        header { padding: 1rem 2rem; background: #16213e; border-bottom: 1px solid #0f3460; display: flex; align-items: center; gap: 1rem; }
+        header h1 { font-size: 1.4rem; }
+        .tabs { display: flex; gap: 0.5rem; margin-left: auto; }
+        .tab { padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; background: #0f3460; border: none; color: #eee; font-size: 0.9rem; }
+        .tab.active { background: #e94560; }
+        .container { padding: 2rem; }
+        .toolbar { margin-bottom: 1rem; display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
+        button { padding: 0.5rem 1rem; border-radius: 6px; border: none; background: #e94560; color: #fff; cursor: pointer; font-size: 0.85rem; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        button.secondary { background: #0f3460; }
+        button.small { padding: 0.3rem 0.6rem; font-size: 0.8rem; }
+        button.view-btn { background: #0f3460; }
+        button.view-btn.active { background: #e94560; }
+        .status { padding: 0.75rem 1rem; background: #16213e; border-radius: 8px; margin-bottom: 1rem; font-size: 0.9rem; }
+        .status.error { border-left: 4px solid #e94560; }
+        .status.success { border-left: 4px solid #4ecdc4; }
+        input, select { padding: 0.4rem 0.6rem; border-radius: 6px; border: 1px solid #0f3460; background: #1a1a2e; color: #eee; -webkit-text-fill-color: #eee; font-size: 0.85rem; }
+        select option { background: #1a1a2e; color: #eee; -webkit-text-fill-color: #eee; }
+        #help-modal { display:none; }
+        .warning { padding: 0.5rem 1rem; background: #2d2d00; border: 1px solid #665500; border-radius: 6px; font-size: 0.8rem; margin-bottom: 1rem; }
+        .login-form { display: flex; flex-direction: column; gap: 0.5rem; max-width: 300px; }
+        .login-form input { width: 100%; }
+        .list-view { width: 100%; border-collapse: collapse; }
+        .list-view th { text-align: left; padding: 0.6rem 1rem; background: #0f3460; cursor: pointer; user-select: none; font-size: 0.8rem; position: sticky; top: 0; }
+        .list-view th:hover { background: #1a4080; }
+        .list-view td { padding: 0.5rem 1rem; border-bottom: 1px solid #0f3460; font-size: 0.85rem; }
+        .list-view tr { cursor: pointer; }
+        .list-view tr:hover { background: #16213e; }
+        .list-view tr.selected { background: #2a1030; }
+        .list-view .cb { width: 30px; }
+        .list-view input[type="checkbox"] { cursor: pointer; }
+        .scroll-container { max-height: 70vh; overflow-y: auto; border-radius: 8px; border: 1px solid #0f3460; }
+        .date-group { margin-bottom: 1.5rem; content-visibility: auto; contain-intrinsic-size: 0 500px; }
+        .date-group-header { font-size: 0.9rem; font-weight: 600; padding: 0.5rem 0; margin-bottom: 0.5rem; border-bottom: 1px solid #0f3460; color: #4ecdc4; display: flex; align-items: center; gap: 0.75rem; }
+        .date-group-header button { font-size: 0.75rem; padding: 0.2rem 0.5rem; background: #0f3460; }
+        .grid { display: grid; gap: 0.5rem; }
+        .photo-card { background: #16213e; border-radius: 6px; padding: 0.3rem; cursor: pointer; border: 2px solid transparent; transition: border-color 0.2s; position: relative; }
+        .photo-card.selected { border-color: #e94560; }
+        .photo-card img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 4px; background: #0f3460; }
+        .photo-card .check { position: absolute; top: 0.5rem; left: 0.5rem; width: 22px; height: 22px; border-radius: 50%; background: rgba(0,0,0,0.5); border: 2px solid #eee; display: flex; align-items: center; justify-content: center; font-size: 0.7rem; opacity: 0; transition: opacity 0.2s; }
+        .photo-card:hover .check, .photo-card.selected .check { opacity: 1; }
+        .photo-card.selected .check { background: #e94560; }
+        .photo-card .video-badge { position: absolute; bottom: 0.5rem; right: 0.5rem; background: rgba(0,0,0,0.7); padding: 0.15rem 0.4rem; border-radius: 4px; font-size: 0.65rem; }
+        .photo-card .card-info { font-size: 0.65rem; margin-top: 0.3rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: 0.8; line-height: 1.3; }
+        .photo-card .card-size { opacity: 0.5; }
+        .controls-row { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; font-size: 0.85rem; margin-bottom: 1rem; }
+        .lightbox { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.95); z-index: 1000; flex-direction: column; align-items: center; justify-content: center; }
+        .lightbox.open { display: flex; }
+        .lightbox .img-container { position: relative; overflow: auto; width: 90vw; height: 80vh; display: flex; align-items: center; justify-content: center; }
+        .lightbox .img-container.zoomed-container { display: block; }
+        .lightbox img { transition: none; }
+        .lightbox img.fit { max-width: 100%; max-height: 100%; object-fit: contain; }
+        .lightbox img.zoomed { max-width: none; max-height: none; cursor: grab; }
+        .lightbox .nav-btn { position: absolute; top: 50%; transform: translateY(-50%); background: rgba(255,255,255,0.1); border: none; color: #eee; font-size: 2rem; padding: 1rem; cursor: pointer; border-radius: 8px; z-index: 10; }
+        .lightbox .nav-btn:hover { background: rgba(255,255,255,0.2); }
+        .lightbox .nav-prev { left: 1rem; }
+        .lightbox .nav-next { right: 1rem; }
+        .lightbox .close-btn { position: absolute; top: 1rem; right: 1rem; background: none; border: none; color: #eee; font-size: 1.5rem; cursor: pointer; }
+        .lightbox .info { position: absolute; bottom: 1rem; color: #aaa; font-size: 0.85rem; }
+        .lightbox .zoom-controls { position: absolute; top: 1rem; left: 1rem; display: flex; gap: 0.4rem; align-items: center; }
+        .lightbox .zoom-controls button { background: rgba(255,255,255,0.1); padding: 0.4rem 0.6rem; font-size: 0.85rem; }
+        .lightbox .zoom-controls span { font-size: 0.8rem; min-width: 3rem; text-align: center; }
+        .lightbox .minimap { position: absolute; bottom: 3rem; right: 1rem; width: 180px; height: 140px; border-radius: 8px; overflow: hidden; border: 2px solid rgba(255,255,255,0.2); display: none; z-index: 10; transition: width 0.3s, height 0.3s; }
+        .lightbox .minimap.expanded { width: 50vw; height: 50vh; }
+        .lightbox .map-toggle { position: absolute; bottom: calc(3rem + 142px); right: 1rem; z-index: 11; background: rgba(0,0,0,0.7); border: 1px solid rgba(255,255,255,0.3); color: #eee; font-size: 1.2rem; padding: 0.2rem 0.5rem; border-radius: 4px; cursor: pointer; }
+        .loading-overlay { display:none; position:fixed; inset:0; background:rgba(26,26,46,0.9); z-index:500; align-items:center; justify-content:center; flex-direction:column; gap:1rem; }
+        .loading-overlay.active { display:flex; }
+        .spinner { width:40px; height:40px; border:4px solid #0f3460; border-top-color:#4ecdc4; border-radius:50%; animation:spin 0.8s linear infinite; }
+        .progress-bar { width: 300px; height: 8px; background: #0f3460; border-radius: 4px; overflow: hidden; }
+        .progress-bar .fill { height: 100%; background: #4ecdc4; transition: width 0.3s; width: 0%; }
+        @keyframes spin { to { transform:rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>📷 PhotoFetch</h1>
+        <span style="font-size:0.65rem;opacity:0.5;">© 2026 Botond Bako</span>
+        <button onclick="document.getElementById('help-modal').style.display='flex'" style="background:#0f3460;border:none;color:#eee;border-radius:50%;width:24px;height:24px;font-size:0.8rem;font-weight:bold;cursor:pointer;margin-left:0.5rem;display:inline-flex;align-items:center;justify-content:center;">?</button>
+        <div class="tabs">
+            <select id="lang-select" onchange="setLang(this.value)" style="padding:0.3rem 1.5rem 0.3rem 0.5rem;border-radius:6px;background:#0f3460 url('data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2212%22 height=%2212%22><path d=%22M2 4l4 4 4-4%22 fill=%22%23eee%22/></svg>') no-repeat right 0.4rem center;color:#eee;-webkit-text-fill-color:#eee;-webkit-appearance:none;appearance:none;border:1px solid #0f3460;font-size:0.8rem;min-width:130px;"></select>
+            <button class="tab active" data-source="usb">USB</button>
+            <button class="tab" data-source="icloud">iCloud</button>
+        </div>
+    </header>
+    <div class="container">
+        <div class="status" id="status"></div>
+
+        <!-- #6: Auto-detect device, show iCloud as fallback -->
+        <div id="no-device" style="display:none;">
+            <p id="no-device-text" style="margin:1rem 0;font-size:1rem;"></p>
+            <p style="margin:0.5rem 0;font-size:0.9rem;opacity:0.7;"><span id="no-device-hint"></span> <a href="#" onclick="switchToIcloud();return false;" style="color:#4ecdc4;" id="no-device-link"></a>.</p>
+            <button onclick="refresh()" style="margin-top:1rem;">🔄 Retry</button>
+        </div>
+
+        <div id="icloud-login" style="display:none;">
+            <div class="warning">🔒 PhotoFetch runs entirely on your computer. Your credentials are never sent to any server — they go directly from this page to Apple via HTTPS. This page is served locally at 127.0.0.1 (your own machine).</div>
+            <div class="login-form">
+                <input type="email" id="icloud-email" autocomplete="off">
+                <input type="password" id="icloud-password" autocomplete="off">
+                <button id="btn-sign-in" onclick="icloudLogin()"></button>
+                <div id="2fa-section" style="display:none;">
+                    <input type="text" id="icloud-2fa" autocomplete="off">
+                    <button id="btn-verify" onclick="icloudVerify2fa()"></button>
+                </div>
+            </div>
+        </div>
+
+        <!-- #1: Big primary action + folder breadcrumb -->
+        <div id="hero-action" style="display:none; margin-bottom:1.5rem;">
+            <button id="btn-hero" onclick="downloadAll()" style="font-size:1.1rem;padding:0.8rem 2rem;"></button>
+            <div id="folder-breadcrumb" style="margin-top:0.5rem;font-size:0.8rem;opacity:0.7;display:none;">
+                📁 <span id="folder-path"></span> <a href="#" onclick="changeFolder();return false;" style="color:#4ecdc4;margin-left:0.5rem;" id="folder-change-link"></a>
+            </div>
+        </div>
+
+        <!-- #4: Persistent completion banner -->
+        <div id="done-banner" style="display:none;padding:1rem;background:#1a3a2a;border:1px solid #4ecdc4;border-radius:8px;margin-bottom:1rem;">
+            <div style="display:flex;align-items:center;gap:0.75rem;">
+                <span style="font-size:1.3rem;">✓</span>
+                <span id="done-text" style="flex:1;"></span>
+                <button class="small secondary" id="btn-open-folder" onclick="openFolder()" style="display:none;"></button>
+                <button class="small secondary" onclick="dismissBanner()">✕</button>
+            </div>
+            <div id="done-errors" style="display:none;margin-top:0.5rem;font-size:0.8rem;opacity:0.8;"></div>
+        </div>
+
+        <!-- #3: Progress (simple sentence + collapsible details) -->
+        <div id="dl-progress-section" style="display:none;margin-bottom:1rem;">
+            <div style="display:flex;align-items:center;gap:1rem;">
+                <div style="flex:1;">
+                    <div id="dl-simple-text" style="font-size:0.95rem;margin-bottom:0.4rem;"></div>
+                    <div class="progress-bar" style="width:100%;"><div class="fill" id="dl-bar-fill"></div></div>
+                </div>
+                <button class="small" id="btn-cancel-dl" onclick="abortDownload()"></button>
+            </div>
+            <details style="margin-top:0.5rem;font-size:0.75rem;opacity:0.7;">
+                <summary id="dl-details-summary"></summary>
+                <div id="dl-detail-text"></div>
+            </details>
+        </div>
+
+        <div id="main-ui" style="display:none;">
+            <div class="toolbar">
+                <button id="btn-refresh" onclick="refresh(true)">Refresh</button>
+                <button id="btn-select-all" class="secondary" onclick="selectAll()">Select All</button>
+                <button id="btn-deselect-all" class="secondary" onclick="selectNone()">Deselect All</button>
+                <button id="btn-zip" onclick="downloadSelected()" disabled>Save (0)</button>
+            </div>
+            <div class="controls-row">
+                <button class="view-btn active" id="btn-list" onclick="setView('list')">☰ List</button>
+                <button class="view-btn" id="btn-grid" onclick="setView('grid')">▦ Grid</button>
+                <span id="lbl-from" style="margin-left:1rem;">From:</span>
+                <input type="date" id="date-from" onchange="applyFilters()" style="width:140px;">
+                <span id="lbl-to">To:</span>
+                <input type="date" id="date-to" onchange="applyFilters()" style="width:140px;">
+                <button id="btn-clear" class="secondary small" onclick="clearDateFilter()">Clear</button>
+            </div>
+            <div id="list-container">
+                <div class="scroll-container">
+                    <table class="list-view"><thead><tr>
+                        <th class="cb"><input type="checkbox" onchange="toggleAll(this.checked)"></th>
+                        <th onclick="sortBy('filename')" id="th-name">Name</th>
+                        <th onclick="sortBy('date')" id="th-date">Date</th>
+                        <th onclick="sortBy('size')" id="th-size">Size</th>
+                        <th onclick="sortBy('type')" id="th-type">Type</th>
+                    </tr></thead><tbody id="photo-tbody"></tbody></table>
+                </div>
+            </div>
+            <div id="grid-container" style="display:none;"></div>
+        </div>
+    </div>
+    <div class="lightbox" id="lightbox">
+        <button class="close-btn" onclick="closeLightbox()">✕</button>
+        <div class="zoom-controls">
+            <button onclick="zoomSet(null, -25)">−</button>
+            <span id="zoom-level">Fit</span>
+            <button onclick="zoomSet(null, 25)">+</button>
+            <button onclick="zoomSet('fit')">Fit</button>
+            <button onclick="zoomSet(25)">25%</button>
+            <button onclick="zoomSet(50)">50%</button>
+            <button onclick="zoomSet(100)">1:1</button>
+        </div>
+        <button class="nav-btn nav-prev" onclick="lightboxNav(-1)">‹</button>
+        <button class="nav-btn nav-next" onclick="lightboxNav(1)">›</button>
+        <div class="img-container" id="img-container"><img id="lightbox-img" src="" alt=""></div>
+        <div class="info" id="lightbox-info"></div>
+        <div class="minimap" id="minimap"></div>
+        <button class="map-toggle" id="map-toggle" onclick="toggleMap()" style="display:none;">⤢</button>
+    </div>
+    <div class="loading-overlay" id="loading-overlay"><div class="spinner"></div><div id="loading-text"></div></div>
+    <div id="help-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:2000;align-items:center;justify-content:center;">
+        <div style="background:#1a1a2e;border-radius:12px;padding:2rem;max-width:500px;width:90%;max-height:80vh;overflow-y:auto;color:#eee;">
+            <h2 id="help-title" style="margin-top:0;margin-bottom:0.3rem;"></h2>
+            <p style="font-size:0.85rem;opacity:0.7;margin-bottom:1.2rem;">v0.3.6</p>
+            <h4 id="help-troubleshoot-title" style="margin-bottom:0.5rem;">🔌 Troubleshooting</h4>
+            <p id="help-trust-text" style="font-size:0.85rem;margin-bottom:0.8rem;line-height:1.5;"></p>
+            <p id="help-nodevice-text" style="font-size:0.85rem;margin-bottom:0;line-height:1.5;"></p>
+            <hr style="border-color:#333;margin:1.5rem 0;">
+            <p id="help-donate-text" style="font-size:0.85rem;margin-bottom:1rem;line-height:1.5;"></p>
+            <a href="https://revolut.me/botondbako" target="_blank" id="help-donate-btn" style="display:inline-block;background:#e94560;color:#fff;padding:0.5rem 1.2rem;border-radius:6px;text-decoration:none;font-size:0.85rem;"></a>
+            <br><br>
+            <button onclick="document.getElementById('help-modal').style.display='none'" style="background:#0f3460;color:#eee;border:none;padding:0.4rem 1rem;border-radius:6px;cursor:pointer;">✕</button>
+        </div>
+    </div>
+    <script src="/static/i18n.js"></script>
+    <script>
+    let lang=(function(){try{return localStorage.getItem("pf-lang")}catch(e){return null}})()||navigator.language.split("-")[0]||"en";
+    if(!LANGS[lang])lang="en";
+    function tr(k,vars){let s=(LANGS[lang]&&LANGS[lang][k])||LANGS.en[k]||k;if(vars)Object.keys(vars).forEach(v=>{s=s.split("{"+v+"}").join(vars[v]);});return s;}
+    function setLang(l){lang=l;try{localStorage.setItem("pf-lang",l)}catch(e){};applyI18n();render();}
+    function applyI18n(){
+        document.getElementById("btn-refresh").textContent=tr("refresh");
+        document.getElementById("btn-select-all").textContent=tr("selectAll");
+        document.getElementById("btn-deselect-all").textContent=tr("deselectAll");
+        document.getElementById("lbl-from").textContent=tr("from")+":";
+        document.getElementById("lbl-to").textContent=tr("to")+":";
+        document.getElementById("btn-clear").textContent=tr("clear");
+        document.getElementById("btn-list").textContent="☰ "+tr("list");
+        document.getElementById("btn-grid").textContent="▦ "+tr("grid");
+        document.getElementById("th-name").textContent=tr("name");
+        document.getElementById("th-date").textContent=tr("date");
+        document.getElementById("th-size").textContent=tr("size");
+        document.getElementById("th-type").textContent=tr("type");
+        document.getElementById("btn-hero").textContent="📱 "+tr("copyAll");
+        document.getElementById("folder-change-link").textContent=tr("change");
+        document.getElementById("btn-open-folder").textContent=tr("openFolder");
+        document.getElementById("btn-cancel-dl").textContent=tr("cancel");
+        document.getElementById("dl-details-summary").textContent=tr("details");
+        document.getElementById("btn-sign-in").textContent=tr("signIn");
+        document.getElementById("btn-verify").textContent=tr("verify");
+        document.getElementById("icloud-email").placeholder=tr("email");
+        document.getElementById("icloud-password").placeholder=tr("password");
+        document.getElementById("icloud-2fa").placeholder=tr("code");
+        document.getElementById("no-device-text").textContent=tr("noPhoneUsb");
+        document.getElementById("no-device-hint").textContent=tr("plugInOrIcloud");
+        document.getElementById("no-device-link").textContent=tr("useIcloud");
+        const warn=document.querySelector(".warning");if(warn)warn.textContent="🔒 "+tr("credWarn");
+        document.getElementById("help-title").textContent=tr("aboutTitle");
+        document.getElementById("help-troubleshoot-title").textContent="🔌 "+tr("troubleshooting");
+        document.getElementById("help-trust-text").textContent=tr("helpTrust");
+        document.getElementById("help-nodevice-text").textContent=tr("helpNoDevice");
+        document.getElementById("help-donate-text").textContent=tr("donate");
+        document.getElementById("help-donate-btn").textContent="❤️ "+tr("donateBtn");
+    }
+    // Populate language selector
+    const LANG_META={en:["🇬🇧","English"],de:["🇩🇪","Deutsch"],fr:["🇫🇷","Français"],es:["🇪🇸","Español"],it:["🇮🇹","Italiano"],pt:["🇵🇹","Português"],nl:["🇳🇱","Nederlands"],pl:["🇵🇱","Polski"],ro:["🇷🇴","Română"],hu:["🇭🇺","Magyar"],cs:["🇨🇿","Čeština"],sk:["🇸🇰","Slovenčina"],bg:["🇧🇬","Български"],hr:["🇭🇷","Hrvatski"],sr:["🇷🇸","Српски"],sl:["🇸🇮","Slovenščina"],da:["🇩🇰","Dansk"],sv:["🇸🇪","Svenska"],no:["🇳🇴","Norsk"],fi:["🇫🇮","Suomi"],et:["🇪🇪","Eesti"],lv:["🇱🇻","Latviešu"],lt:["🇱🇹","Lietuvių"],el:["🇬🇷","Ελληνικά"],tr:["🇹🇷","Türkçe"],ga:["🇮🇪","Gaeilge"],mt:["🇲🇹","Malti"]};
+    (function(){const sel=document.getElementById("lang-select");Object.keys(LANGS).forEach(k=>{const o=document.createElement("option");o.value=k;const m=LANG_META[k]||["",k];o.textContent=m[0]+" "+m[1];if(k===lang)o.selected=true;sel.appendChild(o);});})();
+
+    let currentSource="usb",photos=[],filtered=[],selected=new Set(),sortField="date",sortAsc=false,viewMode="list";
+    let lightboxIdx=-1,zoomPercent=0; // 0 = fit
+
+    function escapeHtml(s){const d=document.createElement("div");d.textContent=s;return d.innerHTML;}
+    function formatSize(b){if(!b)return"—";if(b<1024)return b+" B";if(b<1048576)return(b/1024).toFixed(1)+" KB";return(b/1048576).toFixed(1)+" MB";}
+    function fmtDate(s){if(!s)return"—";const d=new Date(s);if(isNaN(d))return"—";const p=n=>String(n).padStart(2,"0");return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;}
+    function fmtDateGroup(s){if(!s)return tr("unknown");const d=new Date(s);if(isNaN(d))return tr("unknown");const t2=new Date(),diff=Math.floor((t2-d)/864e5);if(diff===0)return tr("today");if(diff===1)return tr("yesterday");return d.toLocaleDateString(lang,{weekday:"long",year:"numeric",month:"long",day:"numeric"});}
+    function getDateOnly(s){if(!s)return"";const d=new Date(s);if(isNaN(d))return"";return d.toISOString().split("T")[0];}
+    function fileExt(f){return f.split(".").pop().toUpperCase();}
+    function isVideo(f){return["MOV","MP4"].includes(fileExt(f));}
+    function fileType(f){return isVideo(f)?"🎬 "+fileExt(f):"📷 "+fileExt(f);}
+    function thumbUrl(p){if(currentSource==="usb")return`/api/usb/thumbnail?path=${encodeURIComponent(p.path)}`;return`/api/icloud/thumbnail?id=${encodeURIComponent(p.id)}`;}
+    function fullUrl(p){return currentSource==="usb"?`/api/usb/preview?path=${encodeURIComponent(p.path)}`:`/api/icloud/download?id=${encodeURIComponent(p.id)}`;}
+    function downloadUrl(p){return currentSource==="usb"?`/api/usb/download?path=${encodeURIComponent(p.path)}`:`/api/icloud/download?id=${encodeURIComponent(p.id)}`;}
+
+    function setView(m){viewMode=m;document.getElementById("btn-list").classList.toggle("active",m==="list");document.getElementById("btn-grid").classList.toggle("active",m==="grid");document.getElementById("list-container").style.display=m==="list"?"block":"none";document.getElementById("grid-container").style.display=m==="grid"?"block":"none";render();}
+
+    document.querySelectorAll(".tab").forEach(tab=>{tab.addEventListener("click",()=>{document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));tab.classList.add("active");currentSource=tab.dataset.source;photos=[];filtered=[];selected.clear();document.getElementById("no-device").style.display="none";render();if(currentSource==="icloud"){document.getElementById("icloud-login").style.display="block";document.getElementById("main-ui").style.display="none";document.getElementById("hero-action").style.display="none";setStatus(tr("signInIcloud"));}else{document.getElementById("icloud-login").style.display="none";refresh();}});});
+
+    function setStatus(m,cls=""){const e=document.getElementById("status");e.textContent=m;e.className="status"+(cls?" "+cls:"");}
+
+
+    async function icloudLogin(){const e=document.getElementById("icloud-email").value,p=document.getElementById("icloud-password").value;setStatus(tr("signingIn"));try{const r=await fetch("/api/icloud/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:e,password:p})});const d=await r.json();if(d.status==="2fa_required"){document.getElementById("2fa-section").style.display="block";setStatus(tr("enter2fa"));}else if(d.status==="ok"){document.getElementById("icloud-login").style.display="none";document.getElementById("main-ui").style.display="block";document.getElementById("hero-action").style.display="block";refresh();}else setStatus(d.error||tr("failed"),"error");}catch(x){setStatus(tr("error")+": "+x.message,"error");}}
+    async function icloudVerify2fa(){const c=document.getElementById("icloud-2fa").value;try{const r=await fetch("/api/icloud/verify-2fa",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({code:c})});const d=await r.json();if(d.status==="ok"){document.getElementById("icloud-login").style.display="none";document.getElementById("main-ui").style.display="block";document.getElementById("hero-action").style.display="block";refresh();}else setStatus(d.error||tr("failed"),"error");}catch(x){setStatus(tr("error")+": "+x.message,"error");}}
+
+    function showLoading(msg){document.getElementById("loading-text").textContent=msg||tr("loading");document.getElementById("loading-overlay").classList.add("active");}
+    function hideLoading(){document.getElementById("loading-overlay").classList.remove("active");}
+
+    async function refresh(forceRescan){
+        showLoading(tr("loading"));
+        try{
+            if(forceRescan&&currentSource==="usb") await fetch("/api/usb/refresh",{method:"POST"});
+            if(currentSource==="usb"){
+                // #6: Auto-detect — check connection first
+                const sr=await fetch("/api/usb/status");
+                const sd=await sr.json();
+                if(!sd.connected){
+                    hideLoading();
+                    document.getElementById("no-device").style.display="block";
+                    document.getElementById("hero-action").style.display="none";
+                    document.getElementById("main-ui").style.display="none";
+                    setStatus(tr("noDevice"));
+                    return;
+                }
+                document.getElementById("no-device").style.display="none";
+            }
+            const r=await fetch(`/api/${currentSource}/photos`);
+            const d=await r.json();
+            if(d.error){setStatus(tr(d.errorCode||d.error),"error");hideLoading();return;}
+            photos=d.photos||[];
+            selected.clear();
+            updateDateRange();applyFilters();
+            setStatus(`${d.total||photos.length} ${tr("photos")}`,"success");
+            // Show UI
+            document.getElementById("hero-action").style.display="block";
+            document.getElementById("main-ui").style.display="block";
+            updateFolderBreadcrumb();
+            // Update hero button text
+            document.getElementById("btn-hero").textContent=`📱 ${tr("copyAllN",{n:photos.length})}`;
+        }catch(x){setStatus(tr("error")+": "+x.message,"error");}
+        hideLoading();
+    }
+
+    function updateDateRange(){const dates=photos.map(p=>getDateOnly(p.date)).filter(Boolean).sort();if(dates.length){const mn=dates[0],mx=dates[dates.length-1];document.getElementById("date-from").min=mn;document.getElementById("date-from").max=mx;document.getElementById("date-to").min=mn;document.getElementById("date-to").max=mx;}}
+
+    function applyFilters(){const from=document.getElementById("date-from").value,to=document.getElementById("date-to").value;filtered=photos.filter(p=>{const d=getDateOnly(p.date);if(from&&d<from)return false;if(to&&d>to)return false;return true;});doSort();render();}
+    function clearDateFilter(){document.getElementById("date-from").value="";document.getElementById("date-to").value="";applyFilters();}
+    function sortBy(f){if(sortField===f)sortAsc=!sortAsc;else{sortField=f;sortAsc=true;}doSort();render();}
+    function doSort(){filtered.sort((a,b)=>{let va,vb;if(sortField==="type"){va=fileExt(a.filename);vb=fileExt(b.filename);}else if(sortField==="size"){va=a.size||0;vb=b.size||0;}else{va=a[sortField]||"";vb=b[sortField]||"";}if(va<vb)return sortAsc?-1:1;if(va>vb)return sortAsc?1:-1;return 0;});}
+
+    function render(){if(viewMode==="list")renderList();else renderGrid();updateButtons();}
+
+    function renderList(){document.getElementById("photo-tbody").innerHTML=filtered.map(p=>{const i=photos.indexOf(p),s=selected.has(i);return`<tr class="${s?"selected":""}" onclick="toggleRow(${i})"><td class="cb"><input type="checkbox" ${s?"checked":""} onclick="event.stopPropagation();toggleRow(${i})"></td><td>${escapeHtml(p.filename)}</td><td>${fmtDate(p.date)}</td><td>${formatSize(p.size)}</td><td>${fileType(p.filename)}</td></tr>`;}).join("");}
+
+    function renderGrid(){const c=document.getElementById("grid-container");const groups={};filtered.forEach(p=>{const k=getDateOnly(p.date)||"unknown";if(!groups[k])groups[k]=[];groups[k].push(p);});const keys=Object.keys(groups).sort((a,b)=>b.localeCompare(a));let h="";for(const k of keys){const g=groups[k],label=fmtDateGroup(g[0].date);h+=`<div class="date-group"><div class="date-group-header"><span>${escapeHtml(label)} (${g.length})</span><button class="small" onclick="selectDateGroup('${k}')">${tr("selectAllDate")}</button><button class="small" onclick="deselectDateGroup('${k}')">${tr("deselectDate")}</button></div><div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(160px,1fr));">`;for(const p of g){const i=photos.indexOf(p),fi=filtered.indexOf(p),s=selected.has(i);h+=`<div class="photo-card ${s?"selected":""}" onclick="cardClick(${i})"><img data-src="${thumbUrl(p)}" alt="${escapeHtml(p.filename)}"><div class="check">✓</div>${isVideo(p.filename)?`<div class="video-badge">▶ ${fileExt(p.filename)}</div>`:""}<div class="card-info">${escapeHtml(p.filename)}<br><span class="card-size">${formatSize(p.size)}</span></div></div>`;}h+=`</div></div>`;}c.innerHTML=h;observeThumbs();}
+
+    function selectDateGroup(dateKey){filtered.forEach(p=>{if(getDateOnly(p.date)===dateKey)selected.add(photos.indexOf(p));});render();}
+    function deselectDateGroup(dateKey){filtered.forEach(p=>{if(getDateOnly(p.date)===dateKey)selected.delete(photos.indexOf(p));});render();}
+    let clickTimer=null,clickTarget=-1;
+    function cardClick(i){
+        if(clickTimer&&clickTarget===i){clearTimeout(clickTimer);clickTimer=null;clickTarget=-1;openLightbox(filtered.indexOf(photos[i]));return;}
+        clickTarget=i;clickTimer=setTimeout(()=>{clickTimer=null;clickTarget=-1;selected.has(i)?selected.delete(i):selected.add(i);render();},250);
+    }
+    function toggleRow(i){
+        if(clickTimer&&clickTarget===i){clearTimeout(clickTimer);clickTimer=null;clickTarget=-1;openLightbox(filtered.indexOf(photos[i]));return;}
+        clickTarget=i;clickTimer=setTimeout(()=>{clickTimer=null;clickTarget=-1;selected.has(i)?selected.delete(i):selected.add(i);render();},250);
+    }
+    function toggleAll(c){if(c)filtered.forEach(p=>selected.add(photos.indexOf(p)));else selected.clear();render();}
+    function selectAll(){toggleAll(true);}
+    function selectNone(){toggleAll(false);}
+    function updateButtons(){const n=selected.size;const totalBytes=[...selected].reduce((sum,i)=>sum+(photos[i].size||0),0);const sizeStr=formatSize(totalBytes);document.getElementById("btn-zip").disabled=n===0;document.getElementById("btn-zip").textContent=`${tr("download")} (${n}, ${sizeStr})`;}
+
+    // Lightbox
+    function openLightbox(fi){lightboxIdx=fi;zoomPercent=0;updateLightbox();document.getElementById("lightbox").classList.add("open");}
+    function closeLightbox(){document.getElementById("lightbox").classList.remove("open");lightboxIdx=-1;}
+    function lightboxNav(d){lightboxIdx+=d;if(lightboxIdx<0)lightboxIdx=filtered.length-1;if(lightboxIdx>=filtered.length)lightboxIdx=0;zoomPercent=0;updateLightbox();}
+    function zoomSet(val,delta){if(val==="fit"){zoomPercent=0;}else if(val!==null){zoomPercent=val;}else{if(zoomPercent===0)zoomPercent=100;zoomPercent=Math.max(10,Math.min(100,zoomPercent+delta));}applyZoom();}
+    function applyZoom(){const img=document.getElementById("lightbox-img");const container=document.getElementById("img-container");if(!img||img.tagName==="VIDEO")return;if(zoomPercent===0){img.className="fit";img.style.width="";img.style.height="";container.classList.remove("zoomed-container");}else{img.className="zoomed";const nat=img.naturalWidth||img.width;img.style.width=(nat*zoomPercent/100)+"px";img.style.height="auto";container.classList.add("zoomed-container");}document.getElementById("zoom-level").textContent=zoomPercent===0?tr("fit"):zoomPercent+"%";}
+    let minimap=null,minimarker=null;
+    function updateLightbox(){const p=filtered[lightboxIdx];if(!p)return;const container=document.getElementById("img-container");const vid=isVideo(p.filename);if(vid){container.innerHTML=`<video id="lightbox-img" controls autoplay style="max-width:90vw;max-height:80vh;"><source src="${downloadUrl(p)}"></video>`;}else{container.innerHTML=`<img id="lightbox-img" class="fit" src="${fullUrl(p)}" alt="">`;const img=document.getElementById("lightbox-img");img.onload=()=>{if(zoomPercent)applyZoom();};applyZoom();}document.getElementById("lightbox-info").textContent=`${p.filename} — ${fmtDate(p.date)} — ${formatSize(p.size)} — ${lightboxIdx+1}/${filtered.length}`;loadGps(p);}
+
+    async function loadGps(p){const mapDiv=document.getElementById("minimap");const togBtn=document.getElementById("map-toggle");mapDiv.classList.remove("expanded");if(isVideo(p.filename)){mapDiv.style.display="none";togBtn.style.display="none";return;}const param=currentSource==="usb"?`path=${encodeURIComponent(p.path)}`:`id=${encodeURIComponent(p.id)}`;try{const r=await fetch(`/api/usb/exif?${param}`);const d=await r.json();if(d.lat&&d.lon){mapDiv.style.display="block";togBtn.style.display="block";if(!minimap){minimap=L.map("minimap",{zoomControl:false,attributionControl:false}).setView([d.lat,d.lon],13);L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(minimap);minimarker=L.marker([d.lat,d.lon]).addTo(minimap);}else{minimap.setView([d.lat,d.lon],13);minimarker.setLatLng([d.lat,d.lon]);}setTimeout(()=>minimap.invalidateSize(),100);}else{mapDiv.style.display="none";togBtn.style.display="none";}}catch(e){mapDiv.style.display="none";togBtn.style.display="none";}}
+    function toggleMap(){const mapDiv=document.getElementById("minimap");mapDiv.classList.toggle("expanded");const btn=document.getElementById("map-toggle");btn.textContent=mapDiv.classList.contains("expanded")?"⤡":"⤢";setTimeout(()=>minimap.invalidateSize(),350);}
+
+    document.addEventListener("keydown",e=>{if(lightboxIdx<0)return;if(e.key==="Escape")closeLightbox();if(e.key==="ArrowLeft")lightboxNav(-1);if(e.key==="ArrowRight")lightboxNav(1);if(e.key==="+")zoomSet(null,25);if(e.key==="-")zoomSet(null,-25);if(e.key==="0")zoomSet("fit");if(e.key==="1")zoomSet(100);});
+    document.getElementById("lightbox").addEventListener("click",e=>{if(e.target.id==="lightbox")closeLightbox();});
+    document.getElementById("lightbox-img").addEventListener("wheel",e=>{e.preventDefault();zoomSet(null,e.deltaY<0?15:-15);});
+
+    let downloadAbortController=null;
+    let downloadToken=null;
+    let lastFolder=(function(){try{return localStorage.getItem("pf-last-folder")}catch(e){return ""}})()||"";
+
+    function formatSpeed(bps){if(!bps)return"";if(bps<1024)return bps+" B/s";if(bps<1048576)return(bps/1024).toFixed(1)+" KB/s";return(bps/1048576).toFixed(1)+" MB/s";}
+    function formatEta(s){if(!s)return"";if(s<60)return"~"+s+"s";if(s<3600)return"~"+Math.floor(s/60)+"m";return"~"+Math.floor(s/3600)+"h "+Math.floor((s%3600)/60)+"m";}
+
+    // #7: Notification on completion
+    function notifyDone(msg){
+        if(document.hasFocus())return;
+        if(Notification.permission==="granted"){new Notification("PhotoFetch",{body:msg});}
+        try{const ctx=new AudioContext(),o=ctx.createOscillator(),g=ctx.createGain();o.connect(g);g.connect(ctx.destination);o.frequency.value=880;g.gain.value=0.1;o.start();o.stop(ctx.currentTime+0.15);}catch(e){}
+    }
+    document.addEventListener("click",function reqNotif(){if(Notification.permission==="default")Notification.requestPermission();document.removeEventListener("click",reqNotif);},{once:true});
+
+    // Folder management (#2, #5)
+    function updateFolderBreadcrumb(){
+        const bc=document.getElementById("folder-breadcrumb");
+        if(lastFolder){bc.style.display="block";document.getElementById("folder-path").textContent=lastFolder;}
+        else{bc.style.display="none";}
+    }
+    async function changeFolder(){
+        try{const r=await fetch("/api/batch/pick-folder",{method:"POST"});const d=await r.json();if(d.folder){lastFolder=d.folder;localStorage.setItem("pf-last-folder",lastFolder);updateFolderBreadcrumb();}}catch(e){}
+    }
+    async function ensureFolder(){
+        if(lastFolder)return lastFolder;
+        setStatus(tr("openingPicker"));
+        try{const r=await fetch("/api/batch/pick-folder",{method:"POST"});const d=await r.json();if(d.error)return null;lastFolder=d.folder;localStorage.setItem("pf-last-folder",lastFolder);updateFolderBreadcrumb();return lastFolder;}catch(x){return null;}
+    }
+
+    // #6: Auto-detect device
+    function switchToIcloud(){
+        currentSource="icloud";
+        document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
+        document.querySelector('[data-source="icloud"]').classList.add("active");
+        document.getElementById("no-device").style.display="none";
+        document.getElementById("icloud-login").style.display="block";
+        document.getElementById("hero-action").style.display="none";
+        document.getElementById("main-ui").style.display="none";
+        setStatus(tr("signInIcloud"));
+    }
+
+    // #4: Done banner
+    function showDoneBanner(saved,skipped,errors,errorList,folder){
+        const el=document.getElementById("done-banner");
+        let text=tr("copiedTo",{n:saved,folder});
+        if(skipped)text+=` · ${skipped} ${tr("alreadyExisted")}`;
+        document.getElementById("done-text").textContent=text;
+        const errEl=document.getElementById("done-errors");
+        if(errors&&errorList.length){
+            errEl.style.display="block";
+            errEl.innerHTML=`${tr("couldNotCopy",{n:errors})} <ul style="margin:0.3rem 0 0 1rem;">${errorList.slice(0,10).map(e=>`<li>${escapeHtml(e.file)}: ${escapeHtml(e.error)}</li>`).join("")}${errorList.length>10?`<li>${tr("andMore",{n:errorList.length-10})}</li>`:""}</ul>`;
+        }else{errEl.style.display="none";}
+        document.getElementById("btn-open-folder").style.display="inline-block";
+        el.style.display="block";
+    }
+    function dismissBanner(){document.getElementById("done-banner").style.display="none";}
+    function openFolder(){
+        // Ask server to open in Finder (best-effort)
+        if(lastFolder)fetch("/api/batch/open-folder",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({folder:lastFolder})});
+    }
+
+    // #1: Hero "Copy all" action
+    async function downloadAll(){
+        filtered.forEach(p=>selected.add(photos.indexOf(p)));
+        render();
+        await downloadSelected();
+    }
+
+    async function downloadSelected(){
+        const items=[...selected].map(i=>{const p=photos[i];return currentSource==="usb"?p.path:String(p.id);});
+        const totalSize=[...selected].reduce((s,i)=>s+(photos[i].size||0),0);
+        const sizes={};[...selected].forEach(i=>{const p=photos[i];sizes[currentSource==="usb"?p.path:String(p.id)]=p.size||0;});
+
+        if(!items.length){setStatus(tr("nothingSelected"),"error");return;}
+
+        const folder=await ensureFolder();
+        if(!folder){setStatus(tr("noFolderSelected"),"error");return;}
+
+        // Show inline progress (#3, #4)
+        document.getElementById("done-banner").style.display="none";
+        const progSection=document.getElementById("dl-progress-section");
+        progSection.style.display="block";
+        document.getElementById("dl-simple-text").textContent=tr("copyingN",{current:0,total:items.length});
+        document.getElementById("dl-bar-fill").style.width="0%";
+        document.getElementById("dl-detail-text").textContent=tr("starting");
+
+        downloadAbortController=new AbortController();
+        let finished=false;
+        let lastErrors=[];
+        let finalSaved=0,finalSkipped=0,finalErrors=0;
+        try{
+            const r=await fetch("/api/batch/download",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({source:currentSource,items,folder,total_size:totalSize,sizes}),signal:downloadAbortController.signal});
+            if(!r.ok){const d=await r.json();setStatus(d.error||"Failed","error");progSection.style.display="none";return;}
+            const reader=r.body.getReader();const decoder=new TextDecoder();let buf="";
+            while(true){
+                const{done,value}=await reader.read();
+                if(done)break;
+                buf+=decoder.decode(value,{stream:true});
+                const lines=buf.split("\n\n");buf=lines.pop()||"";
+                for(const line of lines){
+                    if(!line.startsWith("data: "))continue;
+                    const d=JSON.parse(line.slice(6));
+                    if(d.token){downloadToken=d.token;continue;}
+                    const pct=Math.round((d.current/d.total)*100);
+                    document.getElementById("dl-bar-fill").style.width=pct+"%";
+                    if(d.done){
+                        finished=true;
+                        finalSaved=d.saved;finalSkipped=d.skipped;finalErrors=d.errors||0;
+                        progSection.style.display="none";
+                        if(d.aborted){setStatus(tr("aborted"),"error");}
+                        else{showDoneBanner(d.saved,d.skipped,d.errors,lastErrors,folder);setStatus("");}
+                        notifyDone(tr("photosCopied",{n:d.saved}));
+                    }else{
+                        // #3: Simple human sentence
+                        document.getElementById("dl-simple-text").textContent=tr("copyingN",{current:d.current,total:d.total});
+                        // Details for power users
+                        const speedStr=formatSpeed(d.speed);
+                        const etaStr=formatEta(d.eta);
+                        document.getElementById("dl-detail-text").textContent=`${d.filename||""} · ${d.saved} ${tr("saved")} · ${d.skipped} ${tr("skipped")}${speedStr?" · "+speedStr:""}${etaStr?" · "+etaStr:""}`;
+                        if(d.status==="error")lastErrors.push({file:d.filename,error:d.error});
+                    }
+                }
+            }
+        }catch(x){
+            if(x.name!=="AbortError")setStatus(tr("error")+": "+x.message,"error");
+        }
+        downloadAbortController=null;
+        downloadToken=null;
+        if(!finished)progSection.style.display="none";
+    }
+
+    async function abortDownload(){
+        if(downloadAbortController)downloadAbortController.abort();
+        await fetch("/api/batch/abort",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:downloadToken})});
+        document.getElementById("dl-progress-section").style.display="none";
+        setStatus(tr("aborted"),"error");
+    }
+
+    // Lazy-load thumbnails as they scroll into view
+    let _thumbObserver;
+    function observeThumbs(){
+        if(_thumbObserver)_thumbObserver.disconnect();
+        _thumbObserver=new IntersectionObserver((entries)=>{
+            entries.forEach(e=>{
+                if(e.isIntersecting){
+                    const img=e.target;
+                    img.src=img.dataset.src;
+                    _thumbObserver.unobserve(img);
+                }
+            });
+        },{rootMargin:"200px"});
+        document.querySelectorAll("img[data-src]").forEach(img=>_thumbObserver.observe(img));
+    }
+
+    applyI18n();
+    refresh(false);
+
+    // Auto-poll for device connection every 3s when no device is shown
+    setInterval(async()=>{
+        if(currentSource!=="usb")return;
+        if(document.getElementById("no-device").style.display!=="block")return;
+        try{
+            const r=await fetch("/api/usb/status");
+            const d=await r.json();
+            if(d.connected)refresh(false);
+        }catch(e){}
+    },3000);
+    </script>
+</body>
+</html>

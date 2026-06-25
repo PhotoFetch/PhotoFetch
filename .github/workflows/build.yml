@@ -1,0 +1,242 @@
+name: Build & Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+            ext: ""
+          - os: macos-latest
+            platform: macos
+            ext: ""
+          - os: windows-latest
+            platform: windows
+            ext: ".exe"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install -e ".[dev]"
+          pip install nuitka ordered-set
+
+      - name: Run tests
+        run: pytest -v
+
+      - name: Build executable (macOS)
+        if: matrix.platform == 'macos'
+        run: python -m nuitka --mode=app --assume-yes-for-downloads --output-filename=PhotoFetch --output-dir=release --include-package=photofetch --include-data-files=LICENSE=LICENSE --macos-app-name=PhotoFetch src/photofetch/__main__.py
+
+      - name: Build executable (Linux/Windows)
+        if: matrix.platform != 'macos'
+        run: python -m nuitka --standalone --onefile --assume-yes-for-downloads --output-filename=photofetch${{ matrix.ext }} --output-dir=release --include-package=photofetch --include-data-dir=src/photofetch/templates=photofetch/templates --include-data-dir=src/photofetch/static=photofetch/static --include-data-files=LICENSE=LICENSE src/photofetch/__main__.py
+
+      - name: Upload binary (Linux/Windows)
+        if: matrix.platform != 'macos'
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.platform }}
+          path: release/photofetch${{ matrix.ext }}
+
+      - name: Upload binary (macOS)
+        if: matrix.platform == 'macos'
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-macos
+          path: release/__main__.app
+
+  package-linux:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download binary
+        uses: actions/download-artifact@v4
+        with:
+          name: binary-linux
+          path: bin
+
+      - name: Prepare packaging structure
+        run: |
+          chmod +x bin/photofetch
+          mkdir -p pkg/usr/bin pkg/usr/share/applications pkg/usr/share/icons/hicolor/256x256/apps
+          cp bin/photofetch pkg/usr/bin/
+          cat > pkg/usr/share/applications/photofetch.desktop << EOF
+          [Desktop Entry]
+          Name=PhotoFetch
+          Comment=Download photos from iPhone
+          Exec=photofetch
+          Icon=photofetch
+          Terminal=false
+          Type=Application
+          Categories=Utility;
+          EOF
+          sed -i 's/^[[:space:]]*//' pkg/usr/share/applications/photofetch.desktop
+
+      - name: Install fpm
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ruby ruby-dev build-essential rpm
+          sudo gem install fpm
+
+      - name: Build .deb
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          fpm -s dir -t deb -n photofetch -v "$VERSION" \
+            --description "Download photos from iPhone via USB or iCloud" \
+            --license MIT \
+            --url "https://github.com/${{ github.repository }}" \
+            -C pkg .
+
+      - name: Build .rpm
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          fpm -s dir -t rpm -n photofetch -v "$VERSION" \
+            --description "Download photos from iPhone via USB or iCloud" \
+            --license MIT \
+            --url "https://github.com/${{ github.repository }}" \
+            -C pkg .
+
+      - name: Build AppImage
+        run: |
+          mkdir -p AppDir/usr/bin AppDir/usr/share/applications AppDir/usr/share/icons/hicolor/256x256/apps
+          cp bin/photofetch AppDir/usr/bin/
+          cp pkg/usr/share/applications/photofetch.desktop AppDir/
+          # appimagetool requires an icon matching the Icon= key in the .desktop file
+          sudo apt-get install -y imagemagick
+          magick -size 256x256 xc:'#4A90D9' -fill white -gravity center -pointsize 48 -annotate 0 'PF' AppDir/photofetch.png || \
+            convert -size 256x256 xc:'#4A90D9' -fill white -gravity center -pointsize 48 -annotate 0 'PF' AppDir/photofetch.png
+          cp AppDir/photofetch.png AppDir/usr/share/icons/hicolor/256x256/apps/
+          ln -s usr/bin/photofetch AppDir/AppRun
+          wget -q https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage -O appimagetool
+          chmod +x appimagetool
+          ARCH=x86_64 ./appimagetool --no-appstream AppDir PhotoFetch-x86_64.AppImage
+
+      - name: Upload Linux packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages-linux
+          path: |
+            *.deb
+            *.rpm
+            *.AppImage
+
+  package-macos:
+    needs: build
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download binary
+        uses: actions/download-artifact@v4
+        with:
+          name: binary-macos
+          path: bin
+
+      - name: Prepare .app bundle
+        run: |
+          mv bin/__main__.app PhotoFetch.app
+          chmod +x PhotoFetch.app/Contents/MacOS/*
+
+      - name: Create DMG
+        run: |
+          brew install create-dmg
+          create-dmg \
+            --volname "PhotoFetch" \
+            --window-size 600 400 \
+            --icon "PhotoFetch.app" 150 200 \
+            --app-drop-link 450 200 \
+            PhotoFetch.dmg PhotoFetch.app
+
+      - name: Upload macOS package
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages-macos
+          path: PhotoFetch.dmg
+
+  package-windows:
+    needs: build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download binary
+        uses: actions/download-artifact@v4
+        with:
+          name: binary-windows
+          path: bin
+
+      - name: Determine version
+        id: version
+        shell: bash
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Create Inno Setup script
+        shell: bash
+        run: |
+          cat > installer.iss << EOF
+          [Setup]
+          AppName=PhotoFetch
+          AppVersion=${{ steps.version.outputs.version }}
+          DefaultDirName={autopf}\PhotoFetch
+          DefaultGroupName=PhotoFetch
+          OutputDir=.
+          OutputBaseFilename=PhotoFetch-Setup
+          Compression=lzma2
+          SolidCompression=yes
+
+          [Files]
+          Source: "bin\photofetch.exe"; DestDir: "{app}"; Flags: ignoreversion
+
+          [Icons]
+          Name: "{group}\PhotoFetch"; Filename: "{app}\photofetch.exe"
+          Name: "{commondesktop}\PhotoFetch"; Filename: "{app}\photofetch.exe"
+
+          [Run]
+          Filename: "{app}\photofetch.exe"; Description: "Launch PhotoFetch"; Flags: nowait postinstall
+          EOF
+
+      - name: Build installer
+        run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss'
+        shell: pwsh
+
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages-windows
+          path: PhotoFetch-Setup.exe
+
+  release:
+    needs: [package-linux, package-macos, package-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all packages
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Collect release files
+        run: |
+          mkdir release
+          cp artifacts/packages-linux/*.deb release/
+          cp artifacts/packages-linux/*.rpm release/
+          cp artifacts/packages-linux/*.AppImage release/
+          cp artifacts/packages-macos/*.dmg release/
+          cp artifacts/packages-windows/*.exe release/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          generate_release_notes: true
