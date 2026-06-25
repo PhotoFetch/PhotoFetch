@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.venv/
+dist/
+build/
+release/
+*.egg-info/
+*.spec
+*.onefile-build/
+*.build/
+.env
