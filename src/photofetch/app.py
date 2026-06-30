@@ -12,8 +12,14 @@ def create_app() -> Flask:
         """CSRF: reject cross-origin POST requests."""
         if request.method == "POST":
             origin = request.headers.get("Origin", "")
-            if origin and not origin.startswith("http://127.0.0.1:"):
-                return jsonify({"error": "forbidden"}), 403
+            if origin:
+                from urllib.parse import urlsplit
+                try:
+                    parts = urlsplit(origin)
+                    if parts.scheme not in ("http", "https") or parts.hostname not in ("127.0.0.1", "localhost"):
+                        return jsonify({"error": "forbidden"}), 403
+                except Exception:
+                    return jsonify({"error": "forbidden"}), 403
 
     from photofetch.routes import usb, icloud, main, batch
     app.register_blueprint(main.bp)
