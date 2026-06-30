@@ -81,13 +81,27 @@ def _pick_folder() -> str | None:
 
     else:  # Linux
         try:
-            # zenity --save allows typing a new folder name; makedirs
-            # creates it.  Path is validated by _is_under_home() in the
-            # download route before any files are written.
+            # zenity --directory is the standard Linux folder picker.
             result = subprocess.run(
-                ["zenity", "--file-selection", "--directory", "--save",
-                 "--title=Save photos to...",
-                 "--filename=" + os.path.expanduser("~/")],
+                ["zenity", "--file-selection", "--directory",
+                 "--title=Save photos to..."],
+                capture_output=True, text=True, timeout=120,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                path = result.stdout.strip()
+                if not path.startswith(os.path.expanduser("~")):
+                    return None
+                os.makedirs(path, exist_ok=True)
+                return path
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+
+        try:
+            # KDE / Qt users may have kdialog instead of zenity.
+            result = subprocess.run(
+                ["kdialog", "--getexistingdirectory",
+                 os.path.expanduser("~"),
+                 "--title", "Save photos to..."],
                 capture_output=True, text=True, timeout=120,
             )
             if result.returncode == 0 and result.stdout.strip():
