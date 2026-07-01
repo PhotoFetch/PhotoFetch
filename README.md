@@ -59,7 +59,7 @@ macOS has decent built-in tools (Image Capture, Photos app), but:
 3. iTunes must be installed (provides the Apple USB driver)
 
 ### Linux
-1. Install usbmuxd: `sudo apt install usbmuxd`
+1. Install dependencies: `sudo apt install usbmuxd python3-gi gir1.2-webkit2-4.1`
 2. Download and run from source (see below)
 
 ## Run from source (all platforms)
